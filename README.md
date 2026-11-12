@@ -165,7 +165,7 @@ Implementasikan CLI POC Skema 1 dan uji **tujuh field pada kelima foto secara lo
 ## Menjalankan bot di Render Free
 
 1. Selesaikan draf Telegram yang ingin disimpan ke Sheets. Commit dan push perubahan bot, Dockerfile, .dockerignore, dan requirements.txt ke branch GitHub yang akan dipakai Render. Simpan token dan URL Apps Script di pengaturan environment.
-2. Di Render Dashboard pilih **New → Web Service**, hubungkan GitHub, lalu pilih **Geo-park/OCD-PABRIK** dan branch yang berisi perubahan.
+2. Di Render Dashboard pilih **New → Web Service**, hubungkan GitHub, lalu pilih **AriefRac/OCD-Prototype** dan branch **main**.
 3. Pilih **Docker**, instance **Free**, dan biarkan root directory, Docker command, serta HTTP health check path kosong. Render memakai Dockerfile di root dan port dari variabel PORT. Runtime Python dan dependensi RapidOCR sudah dicantumkan dalam Dockerfile.
 4. Di **Environment** isi TELEGRAM_BOT_TOKEN dan GOOGLE_SHEETS_WEBHOOK_URL memakai nilai dari .env lokal. Isi TELEGRAM_WEBHOOK_SECRET dengan string acak, misalnya hasil perintah Python berikut. Jika memakai pembatasan operator, salin TELEGRAM_ALLOWED_USERS juga. Nama tab default adalah Dokumen_Produksi. Jika tab yang dipakai berbeda, isi GOOGLE_SHEETS_SHEET_NAME. RENDER_EXTERNAL_URL disediakan Render.
 
