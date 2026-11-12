@@ -161,3 +161,20 @@ Contoh di atas adalah ilustrasi skema berdasarkan pembacaan visual, **bukan outp
 ## 12. Langkah terdekat
 
 Implementasikan CLI POC Skema 1 dan uji **tujuh field pada kelima foto secara lokal**. Kumpulkan sampel baru untuk pengujian di luar data pengembangan. YOLO menjadi opsi lanjutan hanya apabila evaluasi menunjukkan pendekatan berbasis label/posisi tidak memadai. Jangan menyatakan OCR sudah akurat atau aplikasi siap dipakai sebelum ada hasil pengujian terukur.
+
+## Menjalankan bot di Render Free
+
+1. Selesaikan draf Telegram yang ingin disimpan ke Sheets. Commit dan push perubahan bot, Dockerfile, .dockerignore, dan requirements.txt ke branch GitHub yang akan dipakai Render. Simpan token dan URL Apps Script di pengaturan environment.
+2. Di Render Dashboard pilih **New → Web Service**, hubungkan GitHub, lalu pilih **Geo-park/OCD-PABRIK** dan branch yang berisi perubahan.
+3. Pilih **Docker**, instance **Free**, dan biarkan root directory, Docker command, serta HTTP health check path kosong. Render memakai Dockerfile di root dan port dari variabel PORT. Runtime Python dan dependensi RapidOCR sudah dicantumkan dalam Dockerfile.
+4. Di **Environment** isi TELEGRAM_BOT_TOKEN dan GOOGLE_SHEETS_WEBHOOK_URL memakai nilai dari .env lokal. Isi TELEGRAM_WEBHOOK_SECRET dengan string acak, misalnya hasil perintah Python berikut. Jika memakai pembatasan operator, salin TELEGRAM_ALLOWED_USERS juga. Nama tab default adalah Dokumen_Produksi. Jika tab yang dipakai berbeda, isi GOOGLE_SHEETS_SHEET_NAME. RENDER_EXTERNAL_URL disediakan Render.
+
+   ~~~powershell
+   .\.venv\Scripts\python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ~~~
+
+5. Saat siap beralih, hentikan proses polling bot di laptop, lalu klik **Deploy Web Service**. Untuk mencoba Render sambil bot laptop tetap aktif, gunakan token bot uji tersendiri di Render.
+6. Tunggu status **Live**, kirim /test ke bot, kirim foto, periksa tujuh kolom, lalu tekan **Kirim ke Sheets**. Periksa nomor dokumen dan waktu_ekspor pada tab Dokumen_Produksi. Jika nomor sudah ada, Apps Script memperbarui baris itu. URL publik Render menerima POST Telegram di /telegram. Membuka halaman root di browser bukan pengujian bot.
+7. Render Free tidur setelah 15 menit tanpa trafik masuk. Pesan pertama bisa membutuhkan sekitar satu menit untuk membangunkan layanan. SQLite dan draf lokal bisa hilang saat layanan tidur, restart, atau redeploy. Jika tombol draf lama gagal, kirim ulang foto dan tinjau lagi. Baris yang sudah dikonfirmasi Apps Script tersimpan di Google Sheets.
+
+[Web Service Render](https://render.com/docs/web-services) · [Docker di Render](https://render.com/docs/docker) · [Batas layanan Free](https://render.com/docs/free)

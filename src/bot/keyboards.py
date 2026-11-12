@@ -4,12 +4,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from src.models.document import ProductionDocument
 
 
-def get_review_keyboard(no_dokumen: str, already_synced: bool = False) -> InlineKeyboardMarkup:
+def get_review_keyboard(no_dokumen: str) -> InlineKeyboardMarkup:
     """Main confirmation buttons after OCR extraction."""
-    action_label = "🔄 Kirim Ulang ke Sheets" if already_synced else "📊 Kirim Langsung ke Sheets"
     keyboard = [
         [
-            InlineKeyboardButton(action_label, callback_data=f"approve_{no_dokumen}"),
+            InlineKeyboardButton("Kirim ke Sheets", callback_data=f"approve_{no_dokumen}"),
             InlineKeyboardButton("✏️ Koreksi Nilai", callback_data=f"edit_menu_{no_dokumen}"),
         ],
         [

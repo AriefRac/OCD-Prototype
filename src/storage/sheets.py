@@ -43,7 +43,7 @@ class GoogleSheetsExporter:
         """Initializes gspread client or webhook mode."""
         if self.webhook_url:
             self._is_ready = True
-            logger.info("Google Sheets exporter initialized in Webhook mode: %s", self.webhook_url)
+            logger.info("Google Sheets exporter initialized in Webhook mode.")
             return
 
         if not self.credentials_file or not self.credentials_file.exists():
@@ -104,25 +104,23 @@ class GoogleSheetsExporter:
 
         # Mode Webhook (Apps Script Web App)
         if self.webhook_url:
-            import json
-            import urllib.request
+            import httpx
             try:
                 payload = {
                     "sheet_name": self.sheet_name,
                     "no_dokumen": doc.no_dokumen,
                     "row": row_values,
                 }
-                data = json.dumps(payload).encode("utf-8")
-                req = urllib.request.Request(
-                    self.webhook_url,
-                    data=data,
-                    headers={"Content-Type": "application/json"},
-                )
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    logger.info("Exported document %s directly to Google Sheets via Webhook.", doc.no_dokumen)
-                    return True
+                resp = httpx.post(self.webhook_url, json=payload, follow_redirects=True, timeout=25)
+                resp.raise_for_status()
+                receipt = resp.json()
+                if receipt.get("ok") is not True or receipt.get("no_dokumen") != doc.no_dokumen:
+                    logger.error("Apps Script did not confirm document %s.", doc.no_dokumen)
+                    return False
+                logger.info("Sheets confirmed %s in %s, row %s.", doc.no_dokumen, self.sheet_name, receipt.get("row"))
+                return True
             except Exception as e:
-                logger.error("Error sending to Google Sheets Webhook: %s", e)
+                logger.error("Google Sheets webhook failed (%s).", type(e).__name__)
                 return False
 
         if not self._is_ready or not self._worksheet:

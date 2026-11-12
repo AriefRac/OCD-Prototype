@@ -39,7 +39,7 @@ class FieldDefinitions:
 
     # Regex patterns for direct content matching or fallback
     REGEX_PATTERNS: Dict[str, re.Pattern] = {
-        "no_dokumen": re.compile(r"\b(KP[0-9A-Z]{6,10}|[A-Z]{2}[0-9A-Z]{6,10})\b", re.IGNORECASE),
+        "no_dokumen": re.compile(r"\b((?=[A-Z0-9]*\d)[A-Z]{2}[0-9A-Z]{6,10})\b", re.IGNORECASE),
         "id_kain_jadi": re.compile(r"\b([0-9A-Z]{2,8}/[0-9A-Z]{3,12})\b", re.IGNORECASE),
         "panjang": re.compile(r"\b([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(?:yards?|yd|m|meter)?)\b", re.IGNORECASE),
     }
@@ -54,6 +54,46 @@ class DocumentExtractor:
     @staticmethod
     def _clean_text(text: str) -> str:
         return " ".join(text.strip().split())
+
+    def _process_card_fields(self, blocks: List[OCRTextBlock]) -> Dict[str, OCRTextBlock]:
+        """Locate the value column on a kartu proses using its ID Kain and CO No. rows."""
+        for header in blocks:
+            number = re.fullmatch(r"(?:NO\.?\s*[:.]?\s*)?(KP[0-9]{6,10})", header.text.strip(), re.I)
+            if not number:
+                continue
+            for label in blocks:
+                if re.sub(r"[\s:]", "", label.text.upper()) != "IDKAIN":
+                    continue
+                height = max(1, label.bbox.height)
+                if not (0 < label.bbox.center_y - header.bbox.center_y < 6 * height):
+                    continue
+                ids = [b for b in blocks if re.fullmatch(r"\d+", b.text.strip())
+                       and b.bbox.x1 >= label.bbox.x2
+                       and abs(b.bbox.center_y - label.bbox.center_y) < height]
+                if not ids:
+                    continue
+                fabric = min(ids, key=lambda b: b.bbox.x1)
+                orders = [b for b in blocks if re.match(r"^CO[.\s]*L?\d", b.text, re.I)
+                          and abs(b.bbox.x1 - fabric.bbox.x1) < height * 2
+                          and b.bbox.y1 > fabric.bbox.y2]
+                if not orders:
+                    continue
+                order = min(orders, key=lambda b: b.bbox.y1)
+                pitch = (order.bbox.center_y - fabric.bbox.center_y) / 7
+                if not height * 0.75 < pitch < height * 3:
+                    continue
+                fields = {"no_dokumen": OCRTextBlock(number[1], header.bbox, header.confidence), "id_kain": fabric}
+                # Interpolate in the value column itself, accounting for tilt and perspective.
+                for field, row in (("lot_kain_mentah", 2), ("id_kain_jadi", 3),
+                                   ("langganan", 5), ("warna", 6), ("panjang", 8)):
+                    x = fabric.bbox.x1 + (order.bbox.x1 - fabric.bbox.x1) * row / 7
+                    y = fabric.bbox.center_y + pitch * row
+                    candidates = [b for b in blocks if abs(b.bbox.x1 - x) < pitch * 0.75
+                                  and abs(b.bbox.center_y - y) < pitch * 0.48]
+                    if candidates:
+                        fields[field] = min(candidates, key=lambda b: abs(b.bbox.center_y - y))
+                return fields
+        return {}
 
     def _find_inline_value(self, block_text: str, label: str) -> Optional[str]:
         """Extracts value if the label and value are inside the same OCR text block (e.g. 'ID KAIN: 1214')."""
@@ -94,14 +134,20 @@ class DocumentExtractor:
         all_warnings: List[str] = []
 
         available_blocks = list(blocks)
+        card_fields = self._process_card_fields(available_blocks)
 
         for field_name, label_variants in self.field_defs.LABELS.items():
             matched_value = ""
             confidence = 0.0
             matched_block = None
 
+            if card_fields:
+                matched_block = card_fields.get(field_name)
+                matched_value = matched_block.text if matched_block else ""
+                confidence = matched_block.confidence if matched_block else 0.0
+
             # Strategy 1: Check if label exists and value is in same block
-            for b in available_blocks:
+            for b in ([] if card_fields else available_blocks):
                 # Prevent id_kain from matching id_kain_jadi
                 if field_name == "id_kain" and re.search(r"\b(JADI|FINISH)\b", b.text, re.IGNORECASE):
                     continue
@@ -122,7 +168,7 @@ class DocumentExtractor:
                     break
 
             # Strategy 2: Label in one block, value in adjacent block (to the right or directly below)
-            if not matched_value:
+            if not matched_value and not card_fields:
                 for label_block in available_blocks:
                     lbl_text_upper = label_block.text.upper().strip()
                     clean_lbl = re.sub(r"[:\-=\s]+$", "", lbl_text_upper).strip()
@@ -163,7 +209,7 @@ class DocumentExtractor:
                         break
 
             # Strategy 3: Regex pattern fallback if still not found
-            if not matched_value and field_name in self.field_defs.REGEX_PATTERNS:
+            if not matched_value and not card_fields and field_name in self.field_defs.REGEX_PATTERNS:
                 regex = self.field_defs.REGEX_PATTERNS[field_name]
                 for b in available_blocks:
                     match = regex.search(b.text)
@@ -177,6 +223,9 @@ class DocumentExtractor:
             cleaned_val = self._clean_text(matched_value)
             cleaned_val = re.sub(r"^[:\-=\s]+", "", cleaned_val).strip()
             cleaned_val = re.sub(r"[:\-=\s]+$", "", cleaned_val).strip()
+            if field_name == "panjang":
+                # OCR often reads the thousands comma as a second decimal point.
+                cleaned_val = re.sub(r"^(\d{1,3})\.(\d{3}\.\d{2}\s*[a-zA-Z]+)$", r"\1,\2", cleaned_val)
 
             is_ambiguous, amb_warnings = self._check_ambiguity(field_name, cleaned_val)
             all_warnings.extend(amb_warnings)

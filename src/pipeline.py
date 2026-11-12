@@ -75,6 +75,7 @@ class ProductionOCRPipeline:
         result: ProcessingResult,
         operator_notes: str = "",
         operator_id: Optional[str] = None,
+        refresh: bool = False,
     ) -> int:
         """Saves extracted data to SQLite database with status PENDING_REVIEW."""
         raw_data = {
@@ -92,6 +93,7 @@ class ProductionOCRPipeline:
             raw_ocr_data=raw_data,
             operator_notes=operator_notes,
             operator_id=operator_id,
+            refresh=refresh,
         )
 
     def confirm_and_export(

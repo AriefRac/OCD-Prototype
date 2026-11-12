@@ -93,10 +93,19 @@ class DatabaseManager:
         raw_ocr_data: Optional[Dict[str, Any]] = None,
         operator_notes: str = "",
         operator_id: Optional[str] = None,
+        refresh: bool = False,
     ) -> int:
         """Save newly extracted document as PENDING_REVIEW draft."""
         now = datetime.now(timezone.utc).isoformat()
         raw_json = json.dumps(raw_ocr_data) if raw_ocr_data else None
+
+        on_conflict = ""
+        if refresh:
+            columns = [key for key in doc.to_dict() if key != "no_dokumen"]
+            columns += ["panjang_numeric", "panjang_unit", "status", "raw_ocr_json", "operator_notes", "updated_at"]
+            on_conflict = " ON CONFLICT(no_dokumen) DO UPDATE SET " + ", ".join(
+                f"{key}=excluded.{key}" for key in columns
+            )
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -107,7 +116,7 @@ class DatabaseManager:
                     langganan, warna, panjang, panjang_numeric, panjang_unit,
                     status, raw_ocr_json, operator_notes, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                """ + on_conflict + " RETURNING id",
                 (
                     doc.no_dokumen,
                     doc.id_kain,
@@ -125,14 +134,15 @@ class DatabaseManager:
                     now,
                 ),
             )
-            doc_id = cursor.lastrowid
+            doc_id = cursor.fetchone()[0]
 
             cursor.execute(
                 """
                 INSERT INTO audit_logs (document_id, no_dokumen, action, operator_id, details)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (doc_id, doc.no_dokumen, "EXTRACTED_DRAFT", operator_id or "system", "Initial draft saved"),
+                (doc_id, doc.no_dokumen, "RESCANNED_DRAFT" if refresh else "EXTRACTED_DRAFT",
+                 operator_id or "system", operator_notes or "Initial draft saved"),
             )
             conn.commit()
             return doc_id

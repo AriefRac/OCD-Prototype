@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from src.storage.database import DatabaseManager
 from src.utils.synthetic_generator import create_synthetic_document
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("cli")
 
 
@@ -109,6 +111,17 @@ def cmd_run_bot(args):
     pipeline = ProductionOCRPipeline()
     bot = FactoryTelegramBot(pipeline)
     app = bot.build_application(config.telegram_bot_token)
+    if args.webhook:
+        base_url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+        secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+        if not base_url.startswith("https://") or not secret:
+            sys.exit("Mode webhook memerlukan RENDER_EXTERNAL_URL (HTTPS) dan TELEGRAM_WEBHOOK_SECRET.")
+        app.run_webhook(
+            listen="0.0.0.0", port=int(os.getenv("PORT", "10000")),
+            url_path="telegram", webhook_url=f"{base_url}/telegram",
+            secret_token=secret, max_connections=1,
+        )
+        return
     print("[+] Menjalankan Bot Telegram (polling mode)... Tekan Ctrl+C untuk berhenti.")
     app.run_polling()
 
@@ -144,6 +157,7 @@ def main():
 
     # run-bot
     p_bot = subparsers.add_parser("run-bot", help="Jalankan antarmuka bot Telegram")
+    p_bot.add_argument("--webhook", action="store_true", help="Terima update lewat HTTPS publik Render")
     p_bot.set_defaults(func=cmd_run_bot)
 
     # run-server
