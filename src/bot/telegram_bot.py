@@ -1,4 +1,5 @@
 import asyncio
+from collections import OrderedDict
 import logging
 from typing import Dict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -14,7 +15,7 @@ from telegram.ext import (
 
 from src.bot.keyboards import get_edit_fields_keyboard, get_review_keyboard
 from src.config import config
-from src.models.document import DocumentStatus, ProductionDocument
+from src.models.document import DocumentStatus, OCRTextBlock, ProductionDocument
 from src.pipeline import ProductionOCRPipeline
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class FactoryTelegramBot:
 
     def __init__(self, pipeline: ProductionOCRPipeline):
         self.pipeline = pipeline
+        self.recent_photos: OrderedDict[str, list[OCRTextBlock]] = OrderedDict()
         self.pending_edits: Dict[int, Dict[str, str]] = {}  # user_id -> {no_dokumen, field_name}
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -81,11 +83,18 @@ class FactoryTelegramBot:
         try:
             # Download highest resolution photo
             photo = update.message.photo[-1]
-            file = await photo.get_file()
-            photo_bytes = await file.download_as_bytearray()
-
-            # Process through pipeline
-            result = self.pipeline.process_image(bytes(photo_bytes))
+            photo_key = photo.file_unique_id
+            if photo_key in self.recent_photos:
+                self.recent_photos.move_to_end(photo_key)
+                result = self.pipeline.process_blocks(self.recent_photos[photo_key])
+            else:
+                file = await photo.get_file()
+                photo_bytes = await file.download_as_bytearray()
+                result = await asyncio.to_thread(self.pipeline.process_image, bytes(photo_bytes))
+                if result.raw_ocr_blocks:
+                    self.recent_photos[photo_key] = result.raw_ocr_blocks
+                    if len(self.recent_photos) > 8:
+                        self.recent_photos.popitem(last=False)
 
             # Save draft in SQLite
             if result.document.no_dokumen and not result.is_duplicate:

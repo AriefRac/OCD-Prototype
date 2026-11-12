@@ -4,7 +4,7 @@ from typing import Any, Optional, Union
 
 from src.config import config
 from src.extractor.pattern_extractor import DocumentExtractor
-from src.models.document import DocumentStatus, ProcessingResult, ProductionDocument
+from src.models.document import DocumentStatus, OCRTextBlock, ProcessingResult, ProductionDocument
 from src.ocr.base import BaseOCREngine
 from src.ocr.factory import get_ocr_engine
 from src.preprocessing.image_processor import ImageProcessor
@@ -48,8 +48,10 @@ class ProductionOCRPipeline:
 
         # Step 2: OCR Detection & Recognition
         blocks = self.ocr_engine.extract_blocks(preprocessed_img)
+        return self.process_blocks(blocks)
 
-        # Step 3: Information Extraction
+    def process_blocks(self, blocks: list[OCRTextBlock]) -> ProcessingResult:
+        """Extract fields and check current draft state, including for cached Telegram photos."""
         doc, fields, warnings = self.extractor.extract(blocks)
 
         # Step 4: Duplicate Check in Database
